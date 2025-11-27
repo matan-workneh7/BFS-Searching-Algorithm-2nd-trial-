@@ -1,0 +1,4 @@
+osmnx>=1.6.0
+networkx>=3.0
+matplotlib>=3.7.0
+pathlib2>=2.3.0
