@@ -1,6 +1,7 @@
 import osmnx as ox
 import networkx as nx
 import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
 from collections import deque
 from typing import List, Set, Tuple, Optional
 from pathlib import Path
@@ -178,46 +179,136 @@ class AddisAbabaBFS:
                 continue
         return total_distance
 
-    def find_all_shortest_paths(self, start, goal, max_paths=5) -> List[List]:
+    def find_all_shortest_paths_optimized(self, start, goal, max_paths=5) -> List[List]:
         """
-        Find all shortest paths between start and goal (Constraint 3: Multiple optimal paths).
-        Returns list of paths, all with the same minimum length.
+        Memory-efficient optimized version to find all shortest paths between start and goal.
+        Uses parent tracking instead of storing full paths in queue.
+        Time: O(V + E + P*L) where P=paths, L=length
+        Space: O(V + E) vs O(V²) in original
         """
-        # Get shortest path length first
-        shortest_path, _, _ = self.bfs_shortest_path(start, goal)
-        if not shortest_path:
+        try:
+            start_node = self._get_nearest_node(start)
+            goal_node = self._get_nearest_node(goal)
+        except Exception as e:
+            print(f"Error: Could not find location - {e}")
             return []
         
-        shortest_length = len(shortest_path)
-        all_paths = [shortest_path]
+        if start_node == goal_node:
+            return [[start_node]]
         
-        # Modified BFS to find all shortest paths
-        start_node = self._get_nearest_node(start)
-        goal_node = self._get_nearest_node(goal)
+        # First BFS to find shortest distance and build parent tree
+        queue = deque([start_node])
+        visited = {start_node}
+        distance = {start_node: 0}
+        parents = {start_node: []}  # Track multiple parents per node
         
-        queue = deque([(start_node, [start_node])])
-        visited = set()
-        
-        while queue and len(all_paths) < max_paths:
-            current, path = queue.popleft()
+        while queue:
+            current = queue.popleft()
             
-            if current == goal_node and len(path) == shortest_length:
-                if path not in all_paths:
-                    all_paths.append(path)
-                continue
-            
-            if len(path) >= shortest_length:
-                continue
+            if current == goal_node:
+                break  # Found shortest distance to goal
             
             for neighbor in self.G.neighbors(current):
-                if neighbor not in path:  # Avoid cycles
-                    new_path = path + [neighbor]
-                    queue.append((neighbor, new_path))
+                if neighbor not in visited:
+                    visited.add(neighbor)
+                    distance[neighbor] = distance[current] + 1
+                    parents[neighbor] = [current]
+                    queue.append(neighbor)
+                elif distance[neighbor] == distance[current] + 1:
+                    # Found another shortest path to neighbor
+                    parents[neighbor].append(current)
+        
+        if goal_node not in distance:
+            return []  # No path found
+        
+        shortest_length = distance[goal_node]
+        
+        # Backtrack to find all paths (memory-efficient recursion)
+        def backtrack_paths(node: int, current_path: List[int], all_paths: List[List]) -> None:
+            """Recursive backtrack with early stopping."""
+            if len(all_paths) >= max_paths:
+                return  # Stop when we have enough paths
+            
+            if node == start_node:
+                # Found complete path
+                all_paths.append(current_path[::-1])  # Reverse to get start->goal
+                return
+            
+            # Try each parent (all lead to optimal paths)
+            for parent in parents[node]:
+                if len(all_paths) >= max_paths:
+                    break
+                backtrack_paths(parent, current_path + [parent], all_paths)
+        
+        all_paths = []
+        backtrack_paths(goal_node, [goal_node], all_paths)
         
         if len(all_paths) > 1:
-            print(f"Constraint: Found {len(all_paths)} optimal paths of equal length ({shortest_length-1} steps)")
+            print(f"Constraint: Found {len(all_paths)} optimal paths of equal length ({shortest_length} steps)")
         
         return all_paths
+    
+    def find_all_shortest_paths_streaming(self, start, goal, max_paths=5):
+        """
+        Streaming generator version - yields paths one at a time.
+        Most memory efficient for large numbers of paths.
+        """
+        try:
+            start_node = self._get_nearest_node(start)
+            goal_node = self._get_nearest_node(goal)
+        except Exception as e:
+            print(f"Error: Could not find location - {e}")
+            return
+        
+        if start_node == goal_node:
+            yield [start_node]
+            return
+        
+        # Build parent tree (same as optimized version)
+        queue = deque([start_node])
+        visited = {start_node}
+        distance = {start_node: 0}
+        parents = {start_node: []}
+        
+        while queue:
+            current = queue.popleft()
+            
+            if current == goal_node:
+                break
+            
+            for neighbor in self.G.neighbors(current):
+                if neighbor not in visited:
+                    visited.add(neighbor)
+                    distance[neighbor] = distance[current] + 1
+                    parents[neighbor] = [current]
+                    queue.append(neighbor)
+                elif distance[neighbor] == distance[current] + 1:
+                    parents[neighbor].append(current)
+        
+        if goal_node not in distance:
+            return
+        
+        # Streaming backtrack using generator
+        def stream_backtrack(node: int, current_path: List[int]):
+            if node == start_node:
+                yield current_path[::-1]
+                return
+            
+            for parent in parents[node]:
+                yield from stream_backtrack(parent, current_path + [parent])
+        
+        path_count = 0
+        for path in stream_backtrack(goal_node, [goal_node]):
+            if path_count >= max_paths:
+                break
+            yield path
+            path_count += 1
+    
+    def find_all_shortest_paths(self, start, goal, max_paths=5) -> List[List]:
+        """
+        Legacy wrapper - uses optimized version for backward compatibility.
+        """
+        return self.find_all_shortest_paths_optimized(start, goal, max_paths)
     
     def get_node_name(self, node_id: int) -> str:
         """Get node name from ID or return ID as string."""
@@ -231,47 +322,55 @@ class AddisAbabaBFS:
         return f"Node {node_id}"
 
     def visualize_path(self, path: List[int], visited: Set[int] = None, 
-                      alternative_path: List[int] = None, save_path: str = "addis_ababa_path.png") -> None:
-        """Visualize the path on Addis Ababa's map with optional alternative path in yellow."""
+                      alternative_paths: List[List[int]] = None, save_path: str = "addis_ababa_path.png", 
+                      show_plot: bool = True) -> None:
+        """Visualize the path on Addis Ababa's map with multiple alternative paths in different colors."""
         try:
             # Create a figure and axis
             fig, ax = plt.subplots(figsize=(12, 10))
             
-            # Plot the base graph
+            # Plot the base graph with no nodes and clean edges
             ox.plot_graph(
                 self.G,
                 show=False,
                 close=False,
-                node_size=0,
-                edge_linewidth=0.5,
-                edge_color='gray',
+                node_size=0,  # Hide all nodes completely
+                edge_linewidth=0.3,  # Thinner base edges
+                edge_color='lightgray',  # Lighter base edges
                 ax=ax
             )
 
-            # Highlight visited nodes (if any) - simpler approach
+            # Highlight explored/visited area (light blue)
             if visited and len(visited) > 0:
-                # Get coordinates of visited nodes
                 visited_nodes = list(visited)
                 if visited_nodes:
                     # Create a subgraph with just visited nodes for visualization
                     visited_subgraph = self.G.subgraph(visited_nodes)
                     
-                    # Plot visited edges in light blue
+                    # Plot visited edges in light blue to show explored area
                     for u, v, data in visited_subgraph.edges(data=True):
                         if u in self.G.nodes and v in self.G.nodes:
                             x_coords = [self.G.nodes[u]['x'], self.G.nodes[v]['x']]
                             y_coords = [self.G.nodes[u]['y'], self.G.nodes[v]['y']]
-                            ax.plot(x_coords, y_coords, 'b-', linewidth=0.5, alpha=0.2)
+                            ax.plot(x_coords, y_coords, 'b-', linewidth=0.8, alpha=0.25)
 
-            # Highlight the alternative path in yellow (if exists)
-            if alternative_path and len(alternative_path) > 1:
-                for i in range(len(alternative_path) - 1):
-                    u, v = alternative_path[i], alternative_path[i+1]
-                    if u in self.G.nodes and v in self.G.nodes:
-                        x_coords = [self.G.nodes[u]['x'], self.G.nodes[v]['x']]
-                        y_coords = [self.G.nodes[u]['y'], self.G.nodes[v]['y']]
-                        ax.plot(x_coords, y_coords, 'y-', linewidth=2.5, alpha=0.8, label='Alternative Path')
-
+            # Define distinct colors for alternative paths
+            alt_colors = ['yellow', 'lime', 'cyan', 'magenta', 'orange', 'purple', 'pink']
+            
+            # Highlight all alternative paths
+            legend_entries = []
+            if alternative_paths:
+                for i, alt_path in enumerate(alternative_paths):
+                    if i < len(alt_colors) and alt_path and len(alt_path) > 1:
+                        color = alt_colors[i]
+                        for j in range(len(alt_path) - 1):
+                            u, v = alt_path[j], alt_path[j+1]
+                            if u in self.G.nodes and v in self.G.nodes:
+                                x_coords = [self.G.nodes[u]['x'], self.G.nodes[v]['x']]
+                                y_coords = [self.G.nodes[u]['y'], self.G.nodes[v]['y']]
+                                ax.plot(x_coords, y_coords, color=color, linewidth=3, alpha=0.9)
+                        legend_entries.append(f'Alternative {i+1}')
+            
             # Highlight the primary path in red
             if path and len(path) > 1:
                 for i in range(len(path) - 1):
@@ -279,28 +378,43 @@ class AddisAbabaBFS:
                     if u in self.G.nodes and v in self.G.nodes:
                         x_coords = [self.G.nodes[u]['x'], self.G.nodes[v]['x']]
                         y_coords = [self.G.nodes[u]['y'], self.G.nodes[v]['y']]
-                        ax.plot(x_coords, y_coords, 'r-', linewidth=3, alpha=0.9, label='Primary Path')
+                        ax.plot(x_coords, y_coords, 'red', linewidth=4, alpha=0.9)
+                legend_entries.insert(0, 'Primary Path')
 
             # Add title
             start_name = self.get_node_name(path[0]) if path else "Start"
             end_name = self.get_node_name(path[-1]) if path else "End"
             title = f"Path from {start_name} to {end_name}"
-            if alternative_path:
-                title += f" (with alternative)"
-            plt.title(title, fontsize=14)
+            if alternative_paths:
+                title += f" ({len(alternative_paths)} alternatives)"
+            plt.title(title, fontsize=16, fontweight='bold')
             
-            # Add legend if alternative path exists
-            if alternative_path:
-                ax.legend(loc='upper right')
+            # Add clean legend only if we have paths to show
+            if legend_entries:
+                # Create custom legend with proper colors
+                legend_colors = ['red'] + alt_colors[:len(alternative_paths)] if alternative_paths else ['red']
+                legend_handles = []
+                for i, (entry, color) in enumerate(zip(legend_entries, legend_colors)):
+                    legend_handles.append(Line2D([0], [0], color=color, linewidth=3, label=entry))
+                ax.legend(handles=legend_handles, loc='upper right', fontsize=12)
             
             # Remove axis for cleaner look
             ax.axis('off')
             
-            # Save and show
+            # Add instruction text
+            plt.figtext(0.5, 0.02, "Close this window to continue...", ha="center", fontsize=10, style='italic')
+            
+            # Save the plot
             if save_path:
-                plt.savefig(save_path, dpi=300, bbox_inches='tight')
+                plt.savefig(save_path, dpi=300, bbox_inches='tight', facecolor='white')
                 print(f"Visualization saved as '{save_path}'")
-            plt.show()
+            
+            # Only show if requested (default True for backward compatibility)
+            if show_plot:
+                print("Map window opened. Close it manually to continue...")
+                plt.show(block=True)  # block=True keeps it open until manually closed
+            else:
+                plt.close(fig)  # Close immediately if not showing
             
         except Exception as e:
             print(f"Error in visualization: {e}")
@@ -311,8 +425,9 @@ class AddisAbabaBFS:
             if path:
                 print(f"Start: {self.get_node_name(path[0])}")
                 print(f"End: {self.get_node_name(path[-1])}")
-            if alternative_path:
-                print(f"Alternative path: {len(alternative_path)-1} steps")
+            if alternative_paths:
+                for i, alt_path in enumerate(alternative_paths, 1):
+                    print(f"Alternative {i} path: {len(alt_path)-1} steps")
 
 def main():
     try:
@@ -353,14 +468,22 @@ def main():
             if test_path and len(test_path) == 1:
                 print("✓ Constraint 2 handled: Same location returns single node")
         
-        # Constraint 3: Multiple optimal paths (TEMPORARILY DISABLED)
-        print("\n3. Testing multiple optimal paths...")
-        print("   ⚠ Multiple optimal paths constraint temporarily disabled")
-        # all_paths = addis_bfs.find_all_shortest_paths(start, goal)
-        # if len(all_paths) > 1:
-        #     print(f"✓ Constraint 3 handled: Found {len(all_paths)} optimal paths")
-        # else:
-        #     print("✓ Constraint 3 tested: Only one optimal path found")
+        # Constraint 3: Multiple optimal paths (NOW OPTIMIZED)
+        print("\n3. Testing multiple optimal paths (optimized version)...")
+        all_paths = addis_bfs.find_all_shortest_paths_optimized(start, goal, max_paths=3)
+        if len(all_paths) > 1:
+            print(f"✓ Constraint 3 handled: Found {len(all_paths)} optimal paths")
+            print(f"  Memory usage: O(V + E) vs O(V²) in original")
+            
+            # Test streaming version too
+            print("\n   Testing streaming version...")
+            stream_count = 0
+            for path in addis_bfs.find_all_shortest_paths_streaming(start, goal, max_paths=3):
+                stream_count += 1
+                print(f"     Streamed path {stream_count}: {len(path)-1} steps")
+            print(f"   ✓ Streaming version yielded {stream_count} paths")
+        else:
+            print("✓ Constraint 3 tested: Only one optimal path found")
         
         # Additional constraints
         print("\n4. Testing additional constraints...")
@@ -396,33 +519,42 @@ def main():
             print(f"  Distance: {distance:.0f} meters")
             print(f"  Nodes explored: {len(visited)}")
             
-            # Now try to find one alternative path
-            print(f"\nSearching for alternative optimal path...")
-            _, _, alternative_path = addis_bfs.bfs_shortest_path(start, goal, find_alternative=True)
+            # Now try to find multiple optimal paths using optimized version
+            print(f"\nSearching for multiple optimal paths...")
+            all_optimal_paths = addis_bfs.find_all_shortest_paths_optimized(start, goal, max_paths=3)
             
-            if alternative_path:
-                alt_distance = addis_bfs._calculate_path_distance(alternative_path)
-                print(f"✓ Alternative path found!")
-                print(f"  Steps: {len(alternative_path)-1} (same as primary)")
-                print(f"  Distance: {alt_distance:.0f} meters")
-                print(f"  Difference: {abs(distance - alt_distance):.0f} meters")
-            else:
-                print("ℹ No alternative optimal path found")
-            
-            print(f"\nPrimary path details:")
-            for i, node_id in enumerate(path):
-                print(f"  {i+1}. {addis_bfs.get_node_name(node_id)}")
-            
-            if alternative_path:
-                print(f"\nAlternative path details:")
-                for i, node_id in enumerate(alternative_path):
+            if len(all_optimal_paths) > 1:
+                print(f"✓ Found {len(all_optimal_paths)} optimal paths!")
+                for i, alt_path in enumerate(all_optimal_paths[1:], 1):
+                    alt_distance = addis_bfs._calculate_path_distance(alt_path)
+                    print(f"  Alternative {i}: {len(alt_path)-1} steps, {alt_distance:.0f} meters")
+                
+                print(f"\nPrimary path details:")
+                for i, node_id in enumerate(all_optimal_paths[0]):
                     print(f"  {i+1}. {addis_bfs.get_node_name(node_id)}")
-            
-            # Visualize with both paths
-            print("\nGenerating visualization...")
-            addis_bfs.visualize_path(path, visited, alternative_path)
-            print(f"Visualization saved as 'addis_ababa_path.png'")
-            print("Red = Primary path, Yellow = Alternative path")
+                
+                for path_idx, alt_path in enumerate(all_optimal_paths[1:], 1):
+                    print(f"\nAlternative {path_idx} path details:")
+                    for i, node_id in enumerate(alt_path):
+                        print(f"  {i+1}. {addis_bfs.get_node_name(node_id)}")
+                
+                # Visualize with all paths
+                print("\nGenerating visualization with all optimal paths...")
+                addis_bfs.visualize_path(all_optimal_paths[0], visited, all_optimal_paths[1:])
+                print(f"Visualization saved as 'addis_ababa_path.png'")
+                print("Red = Primary path, Other colors = Alternative paths")
+            else:
+                print("ℹ Only one optimal path found")
+                
+                print(f"\nPrimary path details:")
+                for i, node_id in enumerate(path):
+                    print(f"  {i+1}. {addis_bfs.get_node_name(node_id)}")
+                
+                # Visualize single path
+                print("\nGenerating visualization...")
+                addis_bfs.visualize_path(path, visited)
+                print(f"Visualization saved as 'addis_ababa_path.png'")
+                print("Red = Primary path")
         else:
             print("✗ No path found between the specified locations.")
             
