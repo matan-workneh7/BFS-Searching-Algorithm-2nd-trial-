@@ -1,3 +1,7 @@
+fastapi==0.115.2
+uvicorn==0.31.0
+pydantic==2.9.2
+contextily
 osmnx>=1.6.0
 networkx>=3.0
 matplotlib>=3.7.0

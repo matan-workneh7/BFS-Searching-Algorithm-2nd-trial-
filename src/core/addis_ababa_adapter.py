@@ -13,6 +13,8 @@ from core.location_model import LocationModel
 from shared.constraints.node_limit_constraint import NodeLimitConstraint
 from shared.constraints.distance_constraint import DistanceConstraint
 from shared.constraints.same_location_constraint import SameLocationConstraint
+from shared.constraints.time_constraint import TimeConstraint
+from config.settings import AVERAGE_SPEED_KMH
 from shared.calculators.generic_path_calculator import GenericPathCalculator
 from algorithms.bfs import BFSAlgorithm
 from algorithms.dfs_classic import ClassicDFSAlgorithm as DFSAlgorithm
@@ -85,8 +87,12 @@ class AddisAbabaAdapter:
         """Get human-readable name for a node."""
         return self.location_model.get_node_name(node_id)
     
-    def create_addis_constraints(self, max_nodes: Optional[int] = None, 
-                               max_distance: Optional[float] = None) -> List:
+    def create_addis_constraints(
+        self,
+        max_nodes: Optional[int] = None,
+        max_distance: Optional[float] = None,
+        max_time: Optional[float] = None,
+    ) -> List:
         """
         Create Addis Ababa specific constraints.
         
@@ -104,6 +110,11 @@ class AddisAbabaAdapter:
         
         if max_distance:
             constraints.append(DistanceConstraint(max_distance, self.path_calculator))
+
+        if max_time:
+            # Convert average speed from km/h to m/s
+            speed_m_per_s = (AVERAGE_SPEED_KMH * 1000.0) / 3600.0
+            constraints.append(TimeConstraint(max_time, self.path_calculator, speed_m_per_s))
         
         return constraints
     

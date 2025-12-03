@@ -28,7 +28,12 @@ VISUALIZATION_COLORS = {
 # Path Finding Configuration
 DEFAULT_MAX_PATHS = 5
 DEFAULT_MAX_NODES = None
-DEFAULT_MAX_DISTANCE = None
+DEFAULT_MAX_DISTANCE = None  # meters
+DEFAULT_MAX_TIME = None      # seconds; optional time constraint
+
+# Average travel speed used for time estimation (km/h)
+AVERAGE_SPEED_KMH = 30.0
+
 EXPLORED_LINE_WIDTH = 0.8
 EXPLORED_ALPHA = 0.25
 PRIMARY_LINE_WIDTH = 4

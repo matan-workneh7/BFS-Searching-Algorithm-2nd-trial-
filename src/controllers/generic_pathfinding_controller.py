@@ -23,10 +23,16 @@ class GenericPathfindingController:
         self.domain_adapter = domain_adapter or AddisAbabaAdapter()
         self.visualization_service = None  # Will be created when needed
     
-    def find_optimal_paths(self, start_location: str, goal_location: str, 
-                          algorithm: str = "bfs", max_paths: int = 5,
-                          max_nodes: Optional[int] = None, 
-                          max_distance: Optional[float] = None) -> Dict[str, Any]:
+    def find_optimal_paths(
+        self,
+        start_location: str,
+        goal_location: str,
+        algorithm: str = "bfs",
+        max_paths: int = 5,
+        max_nodes: Optional[int] = None,
+        max_distance: Optional[float] = None,
+        max_time: Optional[float] = None,
+    ) -> Dict[str, Any]:
         """
         Find optimal paths between two locations.
         
@@ -36,7 +42,8 @@ class GenericPathfindingController:
             algorithm: Algorithm to use ("bfs", "dfs", "astar")
             max_paths: Maximum number of paths to find
             max_nodes: Maximum nodes to process
-            max_distance: Maximum path distance
+            max_distance: Maximum path distance (meters)
+            max_time: Maximum travel time (seconds)
             
         Returns:
             Dictionary with path results
@@ -56,7 +63,11 @@ class GenericPathfindingController:
         pathfinding_service = self.domain_adapter.create_pathfinding_service(algorithm)
         
         # Create domain-specific constraints
-        constraints = self.domain_adapter.create_addis_constraints(max_nodes, max_distance)
+        constraints = self.domain_adapter.create_addis_constraints(
+            max_nodes=max_nodes,
+            max_distance=max_distance,
+            max_time=max_time,
+        )
         
         # Find paths
         results = pathfinding_service.find_paths(start_node, goal_node, constraints, max_paths)

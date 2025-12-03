@@ -12,6 +12,7 @@ from algorithms.dfs_classic import ClassicDFSAlgorithm
 from shared.calculators.generic_path_calculator import GenericPathCalculator
 from shared.constraints.node_limit_constraint import NodeLimitConstraint
 from shared.constraints.distance_constraint import DistanceConstraint
+from shared.constraints.time_constraint import TimeConstraint
 
 
 class ClassicDFSController:
@@ -37,6 +38,7 @@ class ClassicDFSController:
                                    max_paths: int = 5,
                                    max_depth: Optional[int] = None,
                                    max_cost: Optional[float] = None,
+                                   max_time: Optional[float] = None,
                                    diversity_threshold: float = 0.7) -> Dict[str, Any]:
         """
         Find paths using Classic DFS with Addis Ababa constraints.
@@ -47,6 +49,7 @@ class ClassicDFSController:
             max_paths: Maximum number of paths to find
             max_depth: Maximum exploration depth
             max_cost: Maximum path cost in meters
+            max_time: Maximum travel time (seconds)
             diversity_threshold: Minimum diversity between paths
             
         Returns:
@@ -78,7 +81,7 @@ class ClassicDFSController:
         
         # Create Addis Ababa-specific constraints (more lenient)
         constraints = self._create_addis_ababa_constraints(
-            max_depth, max_cost, diversity_threshold
+            max_depth, max_cost, max_time, diversity_threshold
         )
         
         # Filter basic paths through constraints
@@ -144,6 +147,7 @@ class ClassicDFSController:
     
     def _create_addis_ababa_constraints(self, max_depth: Optional[int], 
                                         max_cost: Optional[float],
+                                        max_time: Optional[float],
                                         diversity_threshold: float) -> List:
         """
         Create Addis Ababa-specific constraints for Classic DFS.
@@ -151,6 +155,7 @@ class ClassicDFSController:
         Args:
             max_depth: Maximum exploration depth
             max_cost: Maximum path cost in meters
+            max_time: Maximum travel time (seconds)
             diversity_threshold: Minimum diversity between paths
             
         Returns:
@@ -172,6 +177,12 @@ class ClassicDFSController:
             # Default cost limit for Addis Ababa (reasonable travel distance)
             constraints.append(DistanceConstraint(10000, path_calculator=self.domain_adapter.path_calculator))
         
+        # Addis Ababa time constraint (prevent too long travel time)
+        if max_time:
+            # Default urban speed: ~8.3 m/s (30 km/h)
+            average_speed_m_per_s = 8.3
+            constraints.append(TimeConstraint(max_time, self.domain_adapter.path_calculator, average_speed_m_per_s))
+        
         return constraints
     
     def _get_constraint_descriptions(self, constraints: List) -> List[str]:
@@ -182,6 +193,9 @@ class ClassicDFSController:
                 descriptions.append(f"Max depth: {constraint.max_nodes} nodes")
             elif isinstance(constraint, DistanceConstraint):
                 descriptions.append(f"Max cost: {constraint.max_distance:.0f} meters")
+            elif isinstance(constraint, TimeConstraint):
+                max_min = constraint.max_time_seconds / 60.0
+                descriptions.append(f"Max time: {max_min:.1f} minutes")
         return descriptions
     
     def visualize_classic_dfs(self, path_results: Dict[str, Any], 

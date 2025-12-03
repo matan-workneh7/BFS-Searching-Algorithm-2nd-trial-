@@ -9,6 +9,7 @@ from core.addis_ababa_adapter import AddisAbabaAdapter
 from algorithms.astar_improved import AStarAlgorithm
 from shared.constraints.node_limit_constraint import NodeLimitConstraint
 from shared.constraints.distance_constraint import DistanceConstraint
+from shared.constraints.time_constraint import TimeConstraint
 
 
 class AStarController:
@@ -28,7 +29,7 @@ class AStarController:
         )
     
     def find_optimal_paths(self, start_location: str, goal_location: str, 
-                          algorithm: str = "astar") -> Dict[str, Any]:
+                          algorithm: str = "astar", max_time: Optional[float] = None) -> Dict[str, Any]:
         """
         Find optimal paths using A* algorithm.
         
@@ -36,6 +37,7 @@ class AStarController:
             start_location: Start location name
             goal_location: Goal location name
             algorithm: Algorithm name (for compatibility)
+            max_time: Maximum travel time (seconds)
             
         Returns:
             Dictionary with path results and metadata
@@ -51,11 +53,18 @@ class AStarController:
                 "paths": []
             }
         
+        # Create constraints if max_time is provided
+        constraints = []
+        if max_time is not None:
+            # Default urban speed: ~8.3 m/s (30 km/h)
+            average_speed_m_per_s = 8.3
+            constraints.append(TimeConstraint(max_time, self.domain_adapter.path_calculator, average_speed_m_per_s))
+        
         # Find paths using A*
         paths = self.astar_algorithm.find_path(
             start_node, goal_node, 
             self.domain_adapter.graph_adapter, 
-            [],  # No constraints for basic A*
+            constraints,
             max_paths=5
         )
         
